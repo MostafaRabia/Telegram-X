@@ -34,6 +34,39 @@ jobs:
         echo "NDK installed:"
         ls -la $ANDROID_HOME/ndk/
     
+    - name: Install build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y yasm nasm pkg-config
+    
+    - name: Cache native libraries
+      uses: actions/cache@v4
+      with:
+        path: |
+          app/jni/third_party/ffmpeg/build
+          app/jni/third_party/libvpx/build
+        key: ${{ runner.os }}-native-${{ hashFiles('scripts/private/build-ffmpeg-impl.sh', 'scripts/private/build-vpx-impl.sh') }}
+        restore-keys: |
+          ${{ runner.os }}-native-
+    
+    - name: Setup environment
+      run: |
+        chmod +x scripts/*.sh
+        chmod +x scripts/private/*.sh
+    
+    - name: Build native dependencies
+      run: |
+        # Source the environment setup
+        source scripts/set-env.sh
+        
+        # Build libvpx
+        echo "Building libvpx..."
+        ./scripts/build-vpx.sh
+        
+        # Build ffmpeg
+        echo "Building ffmpeg..."
+        ./scripts/build-ffmpeg.sh
+    
     - name: Cache Gradle packages
       uses: actions/cache@v4
       with:
