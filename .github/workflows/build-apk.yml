@@ -1,0 +1,120 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ copilot/add-nsfw-content-filter, main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        fetch-depth: 0
+    
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+        cache: gradle
+    
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+    
+    - name: Cache Gradle packages
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
+    
+    - name: Create local.properties
+      run: |
+        cat > local.properties << EOF
+        sdk.dir=$ANDROID_HOME
+        app.id=org.thunderdog.challegram.nsfw
+        app.name=Telegram X NSFW Filter
+        app.download_url=https://telegram.org/dl
+        telegram.api_id=${{ secrets.TELEGRAM_API_ID }}
+        telegram.api_hash=${{ secrets.TELEGRAM_API_HASH }}
+        EOF
+    
+    - name: Verify NSFW model exists
+      run: |
+        if [ -f app/src/main/assets/models/nsfw_mobilenet.tflite ]; then
+          echo "✅ NSFW model found"
+          ls -lh app/src/main/assets/models/nsfw_mobilenet.tflite
+        else
+          echo "⚠️ NSFW model not found - detector will be disabled"
+        fi
+    
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+    
+    - name: Build debug APK
+      run: ./gradlew assembleUniversalDebug --stacktrace --no-daemon
+      env:
+        JAVA_HOME: ${{ env.JAVA_HOME }}
+    
+    - name: Build release APK
+      run: ./gradlew assembleUniversalRelease --stacktrace --no-daemon
+      continue-on-error: true
+      env:
+        JAVA_HOME: ${{ env.JAVA_HOME }}
+    
+    - name: List APK files
+      run: |
+        echo "Generated APKs:"
+        find app/build/outputs/apk -name "*.apk" -type f -exec ls -lh {} \;
+    
+    - name: Upload debug APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: telegram-x-nsfw-debug
+        path: app/build/outputs/apk/universal/debug/*.apk
+        if-no-files-found: error
+    
+    - name: Upload release APK
+      uses: actions/upload-artifact@v4
+      if: success()
+      continue-on-error: true
+      with:
+        name: telegram-x-nsfw-release
+        path: app/build/outputs/apk/universal/release/*.apk
+        if-no-files-found: warn
+    
+    - name: Generate build summary
+      if: always()
+      run: |
+        echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### APK Files" >> $GITHUB_STEP_SUMMARY
+        if [ -d app/build/outputs/apk ]; then
+          find app/build/outputs/apk -name "*.apk" -type f | while read apk; do
+            size=$(ls -lh "$apk" | awk '{print $5}')
+            name=$(basename "$apk")
+            echo "- **$name**: $size" >> $GITHUB_STEP_SUMMARY
+          done
+        else
+          echo "No APK files generated" >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### NSFW Model Status" >> $GITHUB_STEP_SUMMARY
+        if [ -f app/src/main/assets/models/nsfw_mobilenet.tflite ]; then
+          model_size=$(ls -lh app/src/main/assets/models/nsfw_mobilenet.tflite | awk '{print $5}')
+          echo "✅ Model included: $model_size" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> ⚠️ **Note**: This is a placeholder model. Replace with a trained model for production use." >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ Model not found - NSFW filter will be disabled" >> $GITHUB_STEP_SUMMARY
+        fi
