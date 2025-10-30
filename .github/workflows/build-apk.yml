@@ -28,6 +28,12 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
     
+    - name: Install NDK
+      run: |
+        echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;23.2.8568313"
+        echo "NDK installed:"
+        ls -la $ANDROID_HOME/ndk/
+    
     - name: Cache Gradle packages
       uses: actions/cache@v4
       with:
