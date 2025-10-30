@@ -47,6 +47,7 @@ import org.thunderdog.challegram.util.text.TextEntity;
 import org.thunderdog.challegram.util.text.TextWrapper;
 
 import java.util.ArrayList;
+import java.util.List;
 
 import me.vkryl.android.animator.FactorAnimator;
 import me.vkryl.core.MathUtils;
@@ -986,5 +987,28 @@ public class TGMessageMedia extends TGMessage {
     }
 
     return updated;
+  }
+
+  @Override
+  public boolean canBeSaved () {
+    // Check if parent message allows saving
+    if (!super.canBeSaved()) {
+      return false;
+    }
+    
+    // Check if any media content is NSFW and blocked
+    if (mosaicWrapper != null) {
+      List<MediaWrapper> wrappers = mosaicWrapper.getItems();
+      if (wrappers != null) {
+        for (MediaWrapper wrapper : wrappers) {
+          if (wrapper != null && wrapper.isNSFWBlocked()) {
+            // NSFW content detected - prevent saving
+            return false;
+          }
+        }
+      }
+    }
+    
+    return true;
   }
 }
