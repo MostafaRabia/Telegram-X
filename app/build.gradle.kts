@@ -454,9 +454,9 @@ dependencies {
   implementation("com.googlecode.mp4parser:isoparser:1.0.6")
 
   // TensorFlow Lite for NSFW detection: https://www.tensorflow.org/lite
-  // Note: TFLite 2.14.0+ requires minSdk 19, so we use 2.9.0 which supports minSdk 16
+  // Note: Using 2.9.0 for minSdk 16 compatibility
+  // Support library removed to avoid minSdk 19 requirement - using manual preprocessing instead
   implementation("org.tensorflow:tensorflow-lite:2.9.0")
-  implementation("org.tensorflow:tensorflow-lite-support:0.4.2")
 }
 
 if (!isExperimentalBuild) {

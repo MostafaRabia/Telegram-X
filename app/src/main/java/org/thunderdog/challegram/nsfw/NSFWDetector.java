@@ -13,6 +13,7 @@
 package org.thunderdog.challegram.nsfw;
 
 import android.content.Context;
+import android.content.res.AssetFileDescriptor;
 import android.graphics.Bitmap;
 import android.util.LruCache;
 
@@ -20,16 +21,14 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import org.tensorflow.lite.Interpreter;
-import org.tensorflow.lite.support.common.FileUtil;
-import org.tensorflow.lite.support.image.ImageProcessor;
-import org.tensorflow.lite.support.image.TensorImage;
-import org.tensorflow.lite.support.image.ops.ResizeOp;
-import org.tensorflow.lite.support.tensorbuffer.TensorBuffer;
 import org.thunderdog.challegram.Log;
 
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -70,9 +69,6 @@ public class NSFWDetector {
   // TensorFlow Lite interpreter
   private Interpreter interpreter;
   
-  // Image preprocessing
-  private ImageProcessor imageProcessor;
-  
   // Result cache (bitmap hashcode -> NSFW score)
   private final LruCache<Integer, Float> resultCache;
   
@@ -91,14 +87,9 @@ public class NSFWDetector {
     // Thread pool with 2 threads for parallel processing
     executorService = Executors.newFixedThreadPool(2);
     
-    // Initialize image processor
-    imageProcessor = new ImageProcessor.Builder()
-        .add(new ResizeOp(INPUT_SIZE, INPUT_SIZE, ResizeOp.ResizeMethod.BILINEAR))
-        .build();
-    
     // Load the TFLite model
     try {
-      ByteBuffer modelBuffer = FileUtil.loadMappedFile(context, MODEL_PATH);
+      MappedByteBuffer modelBuffer = loadModelFile(context, MODEL_PATH);
       Interpreter.Options options = new Interpreter.Options();
       options.setNumThreads(2);
       interpreter = new Interpreter(modelBuffer, options);
@@ -110,6 +101,18 @@ public class NSFWDetector {
       Log.e(TAG, "Error initializing NSFW detector", e);
       interpreter = null;
     }
+  }
+  
+  /**
+   * Load model file from assets
+   */
+  private MappedByteBuffer loadModelFile(Context context, String modelPath) throws IOException {
+    AssetFileDescriptor fileDescriptor = context.getAssets().openFd(modelPath);
+    FileInputStream inputStream = new FileInputStream(fileDescriptor.getFileDescriptor());
+    FileChannel fileChannel = inputStream.getChannel();
+    long startOffset = fileDescriptor.getStartOffset();
+    long declaredLength = fileDescriptor.getDeclaredLength();
+    return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength);
   }
   
   /**
@@ -163,17 +166,15 @@ public class NSFWDetector {
     }
     
     try {
-      // Preprocess image
-      TensorImage tensorImage = new TensorImage();
-      tensorImage.load(bitmap);
-      tensorImage = imageProcessor.process(tensorImage);
+      // Preprocess image - resize to 224x224 and convert to ByteBuffer
+      ByteBuffer inputBuffer = preprocessBitmap(bitmap);
       
       // Prepare output buffer
       float[][] output = new float[1][NUM_CLASSES];
       
       // Run inference
       synchronized (this) {
-        interpreter.run(tensorImage.getBuffer(), output);
+        interpreter.run(inputBuffer, output);
       }
       
       // Extract NSFW confidence score
@@ -189,6 +190,41 @@ public class NSFWDetector {
       Log.e(TAG, "Error during NSFW detection", e);
       return null;
     }
+  }
+  
+  /**
+   * Preprocess bitmap for TFLite model input
+   * Resizes to 224x224 and converts to normalized float ByteBuffer
+   */
+  private ByteBuffer preprocessBitmap(Bitmap bitmap) {
+    // Resize bitmap to model input size
+    Bitmap resizedBitmap = Bitmap.createScaledBitmap(bitmap, INPUT_SIZE, INPUT_SIZE, true);
+    
+    // Allocate ByteBuffer for input (224 * 224 * 3 * 4 bytes for float32)
+    ByteBuffer inputBuffer = ByteBuffer.allocateDirect(INPUT_SIZE * INPUT_SIZE * NUM_CHANNELS * 4);
+    inputBuffer.order(ByteOrder.nativeOrder());
+    
+    // Convert bitmap to normalized float values
+    int[] pixels = new int[INPUT_SIZE * INPUT_SIZE];
+    resizedBitmap.getPixels(pixels, 0, INPUT_SIZE, 0, 0, INPUT_SIZE, INPUT_SIZE);
+    
+    for (int pixel : pixels) {
+      // Extract RGB values and normalize to [0, 1]
+      float r = ((pixel >> 16) & 0xFF) / 255.0f;
+      float g = ((pixel >> 8) & 0xFF) / 255.0f;
+      float b = (pixel & 0xFF) / 255.0f;
+      
+      inputBuffer.putFloat(r);
+      inputBuffer.putFloat(g);
+      inputBuffer.putFloat(b);
+    }
+    
+    // Clean up resized bitmap if it's a different instance
+    if (resizedBitmap != bitmap) {
+      resizedBitmap.recycle();
+    }
+    
+    return inputBuffer;
   }
   
   /**
