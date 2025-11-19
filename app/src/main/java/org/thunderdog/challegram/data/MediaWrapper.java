@@ -1501,6 +1501,28 @@ public class MediaWrapper implements FileProgressComponent.SimpleListener, FileP
     this.targetReceiverReference = targetReceiverReference;
   }
 
+  /**
+   * Check if the current media content is NSFW and has been blocked
+   * @return true if content is NSFW
+   */
+  public boolean isNSFWBlocked () {
+    // Check preview receiver (for thumbnails)
+    if (previewReceiverReference != null) {
+      ImageReceiver preview = previewReceiverReference.getPreview();
+      if (preview != null && preview.isNSFWBlocked()) {
+        return true;
+      }
+    }
+    // Check target receiver (for full media)
+    if (targetReceiverReference instanceof ImageReceiver) {
+      ImageReceiver imageReceiver = (ImageReceiver) targetReceiverReference;
+      if (imageReceiver.isNSFWBlocked()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   // Video resources
 
   private static int circleRadius () {

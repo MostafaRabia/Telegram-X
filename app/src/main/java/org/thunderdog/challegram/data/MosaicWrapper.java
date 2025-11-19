@@ -141,6 +141,14 @@ public class MosaicWrapper implements FactorAnimator.Target, ComplexReceiver.Key
     return items.size() == 1;
   }
 
+  /**
+   * Get all media wrappers in this mosaic
+   * @return List of MediaWrapper items
+   */
+  public List<MediaWrapper> getItems () {
+    return items;
+  }
+
   private static final int POSITION_NONE = 0;
   private static final int POSITION_TOP = 1;
   private static final int POSITION_BOTTOM = 1 << 1;

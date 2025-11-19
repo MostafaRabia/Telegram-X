@@ -452,6 +452,11 @@ dependencies {
   // TODO: upgrade to "com.googlecode.mp4parser:isoparser:1.1.22" or latest
   // mp4parser: https://github.com/sannies/mp4parser/releases
   implementation("com.googlecode.mp4parser:isoparser:1.0.6")
+
+  // TensorFlow Lite for NSFW detection: https://www.tensorflow.org/lite
+  // Note: Using 2.9.0 for minSdk 16 compatibility
+  // Support library removed to avoid minSdk 19 requirement - using manual preprocessing instead
+  implementation("org.tensorflow:tensorflow-lite:2.9.0")
 }
 
 if (!isExperimentalBuild) {

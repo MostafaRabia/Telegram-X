@@ -35,6 +35,8 @@ import org.thunderdog.challegram.Log;
 import org.thunderdog.challegram.U;
 import org.thunderdog.challegram.mediaview.crop.CropState;
 import org.thunderdog.challegram.mediaview.paint.PaintState;
+import org.thunderdog.challegram.nsfw.NSFWDetector;
+import org.thunderdog.challegram.nsfw.NSFWPlaceholder;
 import org.thunderdog.challegram.theme.ColorId;
 import org.thunderdog.challegram.tool.DrawAlgorithms;
 import org.thunderdog.challegram.tool.Paints;
@@ -82,6 +84,11 @@ public class ImageReceiver implements Watcher, ValueAnimator.AnimatorUpdateListe
   private float cropApplyFactor = 1.0f;
 
   private OnCompleteListener completeListener;
+
+  // NSFW detection fields
+  private boolean isNSFW = false;
+  private Bitmap originalBitmap; // Store original before NSFW check
+  private Bitmap placeholderBitmap; // Cached placeholder for NSFW content
 
   public ImageReceiver (View view, int radius) {
     if (handler == null) {
@@ -757,7 +764,47 @@ public class ImageReceiver implements Watcher, ValueAnimator.AnimatorUpdateListe
 
   private void setBitmap (Bitmap bitmap) {
     if (this.bitmap != bitmap) {
-      this.bitmap = bitmap;
+      // Store original bitmap before NSFW processing
+      this.originalBitmap = bitmap;
+      
+      // Perform NSFW detection if bitmap is valid
+      if (U.isValidBitmap(bitmap) && view != null) {
+        NSFWDetector detector = NSFWDetector.getInstance(view.getContext());
+        if (detector.isReady()) {
+          NSFWDetector.NSFWResult result = detector.detectSync(bitmap);
+          if (result != null && result.isNSFW) {
+            // Content is NSFW - replace with placeholder
+            this.isNSFW = true;
+            // Create or reuse placeholder bitmap
+            if (placeholderBitmap == null || 
+                placeholderBitmap.getWidth() != bitmap.getWidth() || 
+                placeholderBitmap.getHeight() != bitmap.getHeight()) {
+              if (placeholderBitmap != null && !placeholderBitmap.isRecycled()) {
+                placeholderBitmap.recycle();
+              }
+              placeholderBitmap = NSFWPlaceholder.createPlaceholderBitmap(
+                  bitmap.getWidth(), 
+                  bitmap.getHeight()
+              );
+            }
+            this.bitmap = placeholderBitmap;
+            Log.i("ImageReceiver", "NSFW content detected and blocked (confidence: " + result.confidence + ")");
+          } else {
+            // Content is safe
+            this.isNSFW = false;
+            this.bitmap = bitmap;
+          }
+        } else {
+          // Detector not ready - show content normally
+          this.isNSFW = false;
+          this.bitmap = bitmap;
+        }
+      } else {
+        // No valid bitmap or view - show as is
+        this.isNSFW = false;
+        this.bitmap = bitmap;
+      }
+      
       if (bitmapShader != null) {
         bitmapShader = null;
         if (roundPaint != null) {
@@ -910,6 +957,14 @@ public class ImageReceiver implements Watcher, ValueAnimator.AnimatorUpdateListe
     return U.isValidBitmap(bitmap);
   }
 
+  /**
+   * Check if the current content is NSFW and blocked
+   * @return true if content is NSFW and has been blocked
+   */
+  public boolean isNSFWBlocked () {
+    return isNSFW;
+  }
+
   public boolean needPlaceholder () {
     return !isLoaded() || (alpha != 1f && ANIMATION_ENABLED && !animationDisabled);
   }
@@ -951,6 +1006,13 @@ public class ImageReceiver implements Watcher, ValueAnimator.AnimatorUpdateListe
   @Override
   public void destroy () {
     clear();
+    // Clean up NSFW placeholder bitmap
+    if (placeholderBitmap != null && !placeholderBitmap.isRecycled()) {
+      placeholderBitmap.recycle();
+      placeholderBitmap = null;
+    }
+    originalBitmap = null;
+    isNSFW = false;
   }
 
   // Current state
